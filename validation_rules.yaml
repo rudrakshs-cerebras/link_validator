@@ -1,0 +1,35 @@
+kind: LinkValidationSpec
+
+nodeTemplates:
+- name: BR-Leaf-Port1
+  linkMatchers:
+  srcLinkMatchers:
+  - dst: wse...
+    dst_if: Port 1
+    count: 12
+  - dst: net...-kx-sr..
+    dst_if: eth...g.
+    count: 12
+  dstLinkMatchers:
+  - src: net...-sp-sw..
+    count: 4
+  
+
+- name: FrontendILeaf
+  srcLinkMatchers:
+  - dst: (inf|net)...-..-sr..
+    dst_if: eth400g.
+    count: 2
+  dstLinkMatchers:
+  - src: net...-sp-sw..
+    count: 1
+
+nodes:
+- template: BR-Leaf-Port1
+  names:
+  - net001-lf-sw01
+  - net002-lf-sw01
+- template: FrontendILeaf
+  names:
+  - inf001-lf-sw01
+  - inf001-lf-sw02
