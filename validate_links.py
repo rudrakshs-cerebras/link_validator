@@ -11,6 +11,7 @@ from typing import List, Dict, Optional
 class LinkMatcher(BaseModel):
     src: Optional[str] = None
     dst: Optional[str] = None
+    src_if: Optional[str] = None
     dst_if: Optional[str] = None
     count: int
 
@@ -53,9 +54,10 @@ def expand_templates(validation_spec: ValidationSpec) -> List[Dict]:
         for name in node.names:
             for matcher in getattr(template, "srcLinkMatchers", []):
                 rule = {
-                    "name": f"{template.name}-{name}-src",
+                    "name": f"{template.name}-{name}-src-{matcher.dst}-dst-{matcher.dst_if}",
                     "src": name,
                     "dst": matcher.dst,
+                    "src_if": matcher.src_if,
                     "dst_if": matcher.dst_if,
                     "count": matcher.count,
                 }
@@ -63,7 +65,7 @@ def expand_templates(validation_spec: ValidationSpec) -> List[Dict]:
 
             for matcher in getattr(template, "dstLinkMatchers", []):
                 rule = {
-                    "name": f"{template.name}-{name}-dst",
+                    "name": f"{template.name}-{name}-dst-{matcher.src}-src-{matcher.src_if}",
                     "src": matcher.src,
                     "dst": name,
                     "dst_if": matcher.dst_if,
@@ -82,38 +84,50 @@ def validate_links(links: List[Dict[str, str]], expanded_rules: List[Dict]):
             if (
                 (not rule["src"] or re.match(rule["src"], link["src_name"]))
                 and (not rule["dst"] or re.match(rule["dst"], link["dst_name"]))
+                and (not rule.get("src_if") or re.match(rule["src_if"], link["src_if"]))
                 and (not rule["dst_if"] or re.match(rule["dst_if"], link["dst_if"]))
             ):
                 results[rule["name"]] += 1
 
     for rule in expanded_rules:
         rule_name = rule["name"]
+        src = rule["src"]
+        dst = rule["dst"]
         expected_count = rule["count"]
         actual_count = results[rule_name]
         if actual_count != expected_count:
-            logger.error(f"Rule '{rule_name}' failed: expected {expected_count}, got {actual_count}")
+            logger.error(f"[FAILED] Rule: '{rule_name}' | SRC: '{src}' | DST: '{dst}' | Expected: {expected_count}, Got: {actual_count}")
         else:
-            logger.info(f"Rule '{rule_name}' passed: expected {expected_count}, got {actual_count}")
+            logger.info(f"[PASSED] Rule: '{rule_name}' | SRC: '{src}' | DST: '{dst}' | Expected: {expected_count}, Got: {actual_count}")
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s")
-    logger = logging.getLogger(__name__)
-
     parser = argparse.ArgumentParser(description="Validate links against rules.")
-    parser.add_argument("--rule_file", help="Path to the YAML file containing validation rules.", required=True)
-    parser.add_argument("--link_file", help="Path to the CSV file containing links.", required=True)
+    parser.add_argument("--template", help="Path to the YAML file containing validation rules.", required=True)
+    parser.add_argument("--inventory", help="Path to the CSV file containing links.", required=True)
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose (debug-level) logging.")
+    parser.add_argument("--error-only", "-e", action="store_true", help="Only show error messages.")
     args = parser.parse_args()
 
+    log_level = logging.DEBUG if args.verbose else logging.ERROR if args.error_only else logging.INFO
+    logging.basicConfig(level=log_level, format="%(levelname)s - %(message)s")
+    logger = logging.getLogger(__name__)
+
+    error_occurred = False 
+
     try:
-        validation_spec = load_validation_rules(args.rule_file)
-        links = load_links(args.link_file)
+        validation_spec = load_validation_rules(args.template)
+        links = load_links(args.inventory)
 
         expanded_rules = expand_templates(validation_spec)
         validate_links(links, expanded_rules)
+
     except ValidationError as e:
         logger.error(f"Validation Error: {e}")
+        error_occurred = True
     except Exception as e:
         logger.exception(f"An unexpected error occurred: {e}")
+        error_occurred = True
 
-
+    if error_occurred:
+        exit(1)
